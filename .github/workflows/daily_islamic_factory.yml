@@ -1,0 +1,90 @@
+.github/workflows/daily_islamic_factory.yml
+name: Daily Islamic History Shorts Factory (مخطوطات منسية - Automated Daily Production)
+
+on:
+  schedule:
+    # يعمل تلقائياً كل يوم الساعة 12:00 ظهراً بتوقيت UTC (الموافق 2:00 ظهراً شتاءً / 3:00 عصراً صيفاً بتوقيت القاهرة)
+    # يتيح وقتاً كافياً لإنتاج وفحص ورفع الفيديوهات قبل موعد النشر المجدول الساعة 7:30 مساءً بتوقيت مصر
+    - cron: '0 12 * * *'
+  workflow_dispatch:
+    inputs:
+      factory_mode:
+        description: 'وضع التشغيل: SINGLE_TEST (فحص بدون رفع) | DAILY_BATCH_5 (إنتاج ورفع 5 حلقات مجدولة يومياً)'
+        required: true
+        default: 'DAILY_BATCH_5'
+
+permissions:
+  contents: write
+
+jobs:
+  produce-and-schedule-shorts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: 1. فحص وتحميل مستودع الكود (Checkout Repository)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: 2. تثبيت محرك FFmpeg والخطوط العربية (FFmpeg & Arabic Fonts)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg fonts-noto-core fonts-hosny-amiri
+
+      - name: 3. إعداد بيئة Python 3.11 (Setup Python)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 4. تثبيت المكتبات المجانية الرسمية (Install Dependencies)
+        run: |
+          pip install -q edge-tts pillow numpy requests google-api-python-client google-auth-oauthlib
+
+      - name: 5. استعادة رمز مصادقة يوتيوب بأمان تام من أسرار GitHub (Restore YouTube OAuth Token)
+        env:
+          YOUTUBE_TOKEN_JSON: ${{ secrets.YOUTUBE_TOKEN_JSON }}
+        run: |
+          if [ -n "$YOUTUBE_TOKEN_JSON" ]; then
+            echo "$YOUTUBE_TOKEN_JSON" > /tmp/token_manuscripts.json
+            chmod 600 /tmp/token_manuscripts.json
+          else
+            echo "⚠️ تنبيه: سر YOUTUBE_TOKEN_JSON غير مضبوط في GitHub Secrets. سيعمل المصنع في وضع SINGLE_TEST فقط."
+          fi
+
+      - name: 6. تشغيل مصنع الفيديوهات التاريخية الإسلامية الموثقة (Execute Production Factory)
+        env:
+          ISLAMIC_FACTORY_MODE: ${{ github.event.inputs.factory_mode || 'DAILY_BATCH_5' }}
+          YOUTUBE_TOKEN_PATH: /tmp/token_manuscripts.json
+        run: |
+          python3 run_islamic_shorts_v3_production.py
+
+      - name: 7. حذف رمز المصادقة فور انتهاء المعالجة لحماية الحساب (Clean Up Sensitive Auth Tokens)
+        if: always()
+        run: |
+          rm -f /tmp/token_manuscripts.json
+
+      - name: 8. الحفظ الدائم لسجلات الجدولة والمصادر في المستودع (Commit & Push Persistent Ledgers)
+        if: always()
+        run: |
+          git config --global user.name "ForgottenManuscriptsBot"
+          git config --global user.email "bot@forgottenmanuscripts.local"
+          git add -f Islamic_Shorts_Test_Lab/production_schedule_ledger.json 2>/dev/null || true
+          git add -f Islamic_Shorts_Test_Lab/historical_sources_registry.json 2>/dev/null || true
+          git add -f Islamic_Shorts_Test_Lab/visual_dedup_registry_v2_2.json 2>/dev/null || true
+          git add -f Islamic_Shorts_Test_Lab/analytics_dashboard.csv 2>/dev/null || true
+          git add -f Islamic_Shorts_Test_Lab/analytics_dashboard.json 2>/dev/null || true
+          git commit -m "chore(scheduler): تحديث سجلات الجدولة والمصادر لمنع التكرار [skip ci]" || echo "لا توجد تعديلات في السجلات"
+          git push origin main || echo "تم تجاوز الدفع في حال تعذر الصلاحية"
+
+      - name: 9. رفع تقارير الجودة ولوحات المعاينة كمرفقات للتحقق (Upload Verification Artifacts)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: forgotten-manuscripts-qa-reports
+          retention-days: 14
+          path: |
+            Islamic_Shorts_Test_Lab/qa_reports/*
+            Islamic_Shorts_Test_Lab/*.json
+            Islamic_Shorts_Test_Lab/*.csv
