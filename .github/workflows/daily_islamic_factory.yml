@@ -33,7 +33,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip'
 
       - name: 4. Install Dependencies
         run: |
@@ -81,6 +80,7 @@ jobs:
         with:
           name: forgotten-manuscripts-qa-reports
           retention-days: 14
+          if-no-files-found: ignore
           path: |
             Islamic_Shorts_Test_Lab/qa_reports/*
             Islamic_Shorts_Test_Lab/*.json
